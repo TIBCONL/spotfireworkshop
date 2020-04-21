@@ -3,10 +3,8 @@
 ## Lab Guide
 
 ### Authors
-Steven van der Kroft 
-svanderk@tibco.com \
-Alain Martens
-amartens@tibco.com
+[Steven van der Kroft](mailto:svanderk@tibco.com)\
+[Alain Martens](mailto:amartens@tibco.com)
 
 <details>
 <summary>
