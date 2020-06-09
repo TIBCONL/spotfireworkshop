@@ -8,7 +8,7 @@
 
 <details>
 <summary>
-Click here to learn about TIBCO
+Click here to learn about TIBCO.
 </summary>
 
 Learn all about TIBCO on our website:
