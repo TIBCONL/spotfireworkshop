@@ -156,7 +156,7 @@ Now you should have a page that looks like the screenshot below. Tip; if you'd l
 <!--![alt_text](images/image1.png "image_tooltip")-->
 <img src=images/image1.png width="80%">
 You have now created a first version of a dashboard by just typing in some questions. Let's spend a little to understand what these visuals are telling us. Tip; To help you focus on a specific visual you might want to maximize it. To do so click on the <!--![alt_text](images/image30.png "image_tooltip")--><img src=images/image30.png width="5%">
-incon in the title of a visual. This will maximize your visual. You are able to click through the different visuals in a maximized way or restore the original layout.
+icon in the title of a visual. This will maximize your visual. You are able to click through the different visuals in a maximized way or restore the original layout.
 
 The histogram tells us that the credit score has a somewhat skewed distribution with a slight tendency towards the lower spectrum. This means that the majority of the credit scores are above the median. 
 
