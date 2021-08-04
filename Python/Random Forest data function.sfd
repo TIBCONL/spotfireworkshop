@@ -1,0 +1,306 @@
+<?xml version="1.0"?>
+<ScriptFunctionDefinition xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Version Major="1" Minor="0" />
+  <Name>Random Forest</Name>
+  <Script>"""
+This data function will train and execute a Random Forest machine learning
+model on a given input dataset. Random Forests are known to be powerful,
+cost-efficient models and are one of the most popular ensemble learning
+methods.
+
+Inputs
+----------
+df : Table
+	Dataset to be used as an input to the random forest.
+target: String
+    Name of the column that you would like the random forest to predict.
+problem_type: String
+	"Classification" or "Regression". This is dependent on the target
+	column that you are trying to predict. If your target column is 
+	categorical or discrete, then choose Classification. If your target
+	column is numerical or continuous, then choose Regression.
+test_size: Real, SingleReal (Optional)
+    Proportion of the dataset that will be held out as the test set.
+	For more information on why we do this, refer to the following:
+	https://en.wikipedia.org/wiki/Training,_validation,_and_test_sets
+	By default, this number will be set to 0.20.
+num_trees: Integer (Optional)
+    The number of trees in the forest.
+max_depth: Integer (Optional)
+    The maximum depth of the tree. If None, then nodes are expanded
+	until all leaves are pure or until all leaves contain less than
+	min_samples_split samples.
+min_samples_split: Integer, Real (Optional)
+    The minimum number of samples required to split an internal node:
+	-If int, then consider min_samples_split as the minimum number.
+	-If float, then min_samples_split is a fraction and 
+	 ceil(min_samples_split * n_samples) are the minimum number of samples 
+	 for each split.
+min_samples_leaf: Integer, Real (Optional)
+	The minimum number of samples required to be at a leaf node. A split
+	point at any depth will only be considered if it leaves at least
+	min_samples_leaf training samples in each of the left and right branches.
+	This may have the effect of smoothing the model, especially in regression.
+	-If int, then consider min_samples_leaf as the minimum number.
+	-If float, then min_samples_leaf is a fraction and
+	 ceil(min_samples_leaf * n_samples) are the minimum number of samples
+	 for each node.
+
+Outputs
+-------
+test_set_with_prediction: Table
+    The portion of the initial dataset used as the testing set with model
+	predictions. The model was trained/fit on the training data, but
+	executed on this testing set. Those predictions are stored in the new
+	"prediction" column.
+evaluation_metric: String
+	The metric used to evaluate the model, as follows:
+	Binary Classification - F1 Score
+	MultiClass Classification - Accuracy
+	Regression - Root Mean Squared Error
+evaluation_score: Numeric
+	Score of corresponding evaluation metric.
+feature_importance: Table
+	A table containing the importances of each feature, as calculated by
+	the random forest.
+
+Packages Required 
+-------
+pandas
+numpy
+scikit-learn (sklearn)
+"""
+
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, mean_squared_error, f1_score
+
+test_size = test_size or 0.2
+num_trees = num_trees or 100
+min_samples_split = min_samples_split or 2
+min_samples_leaf = min_samples_leaf or 1
+
+# First checks if there are null values in your target column. If so, rows containing
+# nulls will be dropped. If you would like to keep these rows, transform the null values
+# before calling this data function.
+
+if sum(df[target].isna()) &gt; 0:
+	df = df.dropna(subset=[target])
+	
+X = df.drop(target, axis=1) #feature columns
+y = df[target] #target column
+
+# Converting int32 to int64 to avoid error when fitting model
+if type(y.iloc[0]) == np.int32:
+	y = y.astype("int64")
+
+# Checking for and converting non-numeric columns into dummies
+#
+# If any non-numeric columns in "df" have a large number unique values, consider
+# pre-processing first, or simply exclude them when setting "df" as an input. Left
+# in, the following step may drain your memory.
+
+if df.shape[1] != df.select_dtypes("number").shape[1]:
+	numeric = X.select_dtypes("number")#.fillna(0)  #fills na's in numeric columns to 0
+	non_numeric = X.select_dtypes("object")
+
+	try:
+		if numeric.isnull().sum().sum() &gt; 0:
+			1/0 #cause error when there are nulls in numeric
+	except:
+		raise ValueError("Missing values found in numeric columns. Please uncomment fillna on line 76 to fill missing values with 0. Consider other imputation methods based on your data.") 
+
+	# Check for &amp; drop any uniquely identifying columns
+	summary_stats = non_numeric.describe()
+	check_for_id = summary_stats.iloc[:2, :].diff(axis=0)
+	uids = check_for_id.apply(lambda row: row[row == 0].index, axis=1)["unique"].values.tolist()
+	non_numeric = non_numeric.drop(uids, axis=1)
+	if non_numeric.empty:
+		X_transformed = numeric
+	else:
+		# Using pd.get_dummies to one-hot-encode non-numeric variables into numeric (0, 1) columns
+		non_numeric = pd.get_dummies(non_numeric, dtype="int64")
+		X_transformed = pd.concat([numeric, non_numeric], axis=1)
+
+	# Creating a train/test split (conditionally using X_transformed or X)
+	X_train, X_test, y_train, y_test = train_test_split(X_transformed, y, test_size=test_size)
+else:
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size)
+
+if problem_type == "Classification":
+    random_forest = RandomForestClassifier(n_estimators=num_trees,
+										  max_depth=max_depth,
+										  min_samples_split=min_samples_split,
+										  min_samples_leaf=min_samples_leaf)
+else:
+    random_forest = RandomForestRegressor(n_estimators=num_trees,
+										  max_depth=max_depth,
+										  min_samples_split=min_samples_split,
+										  min_samples_leaf=min_samples_leaf)
+
+random_forest.fit(X_train, y_train) #model training
+prediction = random_forest.predict(X_test) #making predictions on test set
+
+# Calculating the evaluation metric based on the type of problem:
+# Binary Classification - F1 Score, MultiClass Classification - Accuracy,
+# Regression - Root Mean Squared Error
+if problem_type == "Classification":
+	if len(np.unique(y.values)) == 2:
+		evaluation_score = f1_score(y_test, prediction, average="weighted")
+		evaluation_metric = "F1 Score (Weighted)"
+	else:
+		evaluation_score = accuracy_score(y_test, prediction)
+		evaluation_metric = "Accuracy"
+else:
+	evaluation_score = mean_squared_error(y_test, prediction, squared=False)  #consider MAE, MAPE, R^2 for additional evaluation metrics
+	evaluation_metric = "Root Mean Squared Error"
+
+# Merging results back with original, non-dummied data
+results = pd.DataFrame({"prediction": prediction, target: y_test}, index=X_test.index)
+test_set = X[X.index.isin(X_test.index)]
+
+# Final test set containing actual and predicted values
+test_set_with_prediction = test_set.merge(results,
+										  left_index=True,
+										  right_index=True,
+										  how="left").reset_index(drop=True)
+
+feature_importance = pd.DataFrame({"Feature": X_train.columns,
+								   "Importance": random_forest.feature_importances_})
+
+print(evaluation_metric + ": " + str(evaluation_score))
+
+# If you would like to save the model for future use, "pickle" the
+# random_forest [2] and store model in a document property. You can load 
+# the model by using line [3] with the document property as an input (data
+# type is Binary).
+#
+# [1] import pickle
+# [2] model = pickle.dumps(random_forest)
+# [3] model = pickle.loads(&lt;name of document property storing model&gt;)
+#
+# If the dataset that the model was trained on contained categorical
+# columns that were one-hot-encoded, apply the following before
+# scoring new data (this will ensure the data is in the same format):
+#
+# [1] cols_to_add = set(&lt;old_data&gt;.columns) - set(&lt;new_data&gt;.columns)
+# [2] for col in cols_to_add:
+# [3]    new_data[col] = 0
+# [4] new_data = new_data[old_data.columns]</Script>
+  <Language>Python</Language>
+  <Input>
+    <Name>df</Name>
+    <Type>Table</Type>
+    <DisplayName>df</DisplayName>
+    <Description>Dataset to be used as an input to the random forest.</Description>
+    <AllowedDataType>Integer</AllowedDataType>
+    <AllowedDataType>Double</AllowedDataType>
+    <AllowedDataType>Float</AllowedDataType>
+    <AllowedDataType>Decimal</AllowedDataType>
+    <AllowedDataType>String</AllowedDataType>
+    <AllowedDataType>Date</AllowedDataType>
+    <AllowedDataType>Time</AllowedDataType>
+    <AllowedDataType>DateTime</AllowedDataType>
+    <AllowedDataType>Bool</AllowedDataType>
+    <AllowedDataType>Binary</AllowedDataType>
+    <AllowedDataType>Long</AllowedDataType>
+  </Input>
+  <Input>
+    <Name>target</Name>
+    <Type>Value</Type>
+    <DisplayName>target</DisplayName>
+    <Description>Name of the column that you would like the random forest to predict.</Description>
+    <AllowedDataType>String</AllowedDataType>
+  </Input>
+  <Input>
+    <Name>problem_type</Name>
+    <Type>Value</Type>
+    <DisplayName>problem_type</DisplayName>
+    <Description>"Classification" or "Regression". This is dependent on the target column that you are trying to predict. If your target column is categorical or discrete, then choose Classification. If your target column is numerical or continuous, then choose Regression.</Description>
+    <AllowedDataType>String</AllowedDataType>
+  </Input>
+  <Input>
+    <Name>test_size</Name>
+    <Type>Value</Type>
+    <DisplayName>test_size (optional)</DisplayName>
+    <Description>Proportion of the dataset that will be held out as the test set. For more information on why we do this, refer to the following: https://en.wikipedia.org/wiki/Training,_validation,_and_test_sets. By default, this number will be set to 0.20.</Description>
+    <IsOptional>true</IsOptional>
+    <AllowedDataType>Double</AllowedDataType>
+    <AllowedDataType>Float</AllowedDataType>
+    <AllowedDataType>Long</AllowedDataType>
+  </Input>
+  <Input>
+    <Name>num_trees</Name>
+    <Type>Value</Type>
+    <DisplayName>num_trees (optional)</DisplayName>
+    <Description>The number of trees in the forest.</Description>
+    <IsOptional>true</IsOptional>
+    <AllowedDataType>Integer</AllowedDataType>
+  </Input>
+  <Input>
+    <Name>max_depth</Name>
+    <Type>Value</Type>
+    <DisplayName>max_depth (optional)</DisplayName>
+    <Description>The maximum depth of the tree. If None, then nodes are expanded until all leaves are pure or until all leaves contain less than min_samples_split samples.</Description>
+    <IsOptional>true</IsOptional>
+    <AllowedDataType>Integer</AllowedDataType>
+  </Input>
+  <Input>
+    <Name>min_samples_split</Name>
+    <Type>Value</Type>
+    <DisplayName>min_samples_split (optional)</DisplayName>
+    <Description>The minimum number of samples required to split an internal node:
+-If int, then consider min_samples_split as the minimum number.
+-If float, then min_samples_split is a fraction and ceil(min_samples_split * n_samples) are the minimum number of samples for each split.
+
+</Description>
+    <IsOptional>true</IsOptional>
+    <AllowedDataType>Integer</AllowedDataType>
+    <AllowedDataType>Double</AllowedDataType>
+  </Input>
+  <Input>
+    <Name>min_samples_leaf</Name>
+    <Type>Value</Type>
+    <DisplayName>min_samples_leaf (optional)</DisplayName>
+    <Description>The minimum number of samples required to be at a leaf node. A split point at any depth will only be considered if it leaves at least min_samples_leaf training samples in each of the left and right branches. This may have the effect of smoothing the model, especially in regression.
+-If int, then consider min_samples_leaf as the minimum number.
+-If float, then min_samples_leaf is a fraction and ceil(min_samples_leaf * n_samples) are the minimum number of samples for each node.</Description>
+    <IsOptional>true</IsOptional>
+    <AllowedDataType>Integer</AllowedDataType>
+    <AllowedDataType>Double</AllowedDataType>
+  </Input>
+  <Output>
+    <Name>test_set_with_prediction</Name>
+    <Type>Table</Type>
+    <DisplayName>test_set_with_prediction</DisplayName>
+    <Description>The portion of the initial dataset used as the testing set with model predictions. The model was trained/fit on the training data, but executed on this testing set. Those predictions are stored in the new "prediction" column.</Description>
+  </Output>
+  <Output>
+    <Name>evaluation_metric</Name>
+    <Type>Value</Type>
+    <DisplayName>evaluation_metric</DisplayName>
+    <Description>The metric used to evaluate the model, as follows:
+Binary Classification - F1 Score
+MultiClass Classification - Accuracy
+Regression - Root Mean Squared Error
+</Description>
+  </Output>
+  <Output>
+    <Name>evaluation_score</Name>
+    <Type>Value</Type>
+    <DisplayName>evaluation_score</DisplayName>
+    <Description>Score of corresponding evaluation metric</Description>
+  </Output>
+  <Output>
+    <Name>feature_importance</Name>
+    <Type>Table</Type>
+    <DisplayName>feature_importance</DisplayName>
+    <Description>A table containing the importances of each feature, as calculated by the random forest.</Description>
+  </Output>
+  <Description>This data function will train and execute a Random Forest machine learning model on a given input dataset. Random Forests are known to be powerful, cost-efficient models and are one of the most popular ensemble learning methods.</Description>
+  <AllowCaching>false</AllowCaching>
+  <ApprovalStamp>AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAAaxqdPSFXcUy8WP5G/MWJlgAAAAACAAAAAAAQZgAAAAEAACAAAADLfULt54MB3g2PdAML8HTGmWt4QkPhlaPaN4tcaf68gAAAAAAOgAAAAAIAACAAAADmIrelMxnpv42iQ0QHRtyxuR1dz3rb/FwS69nDYNFEPJAAAAALQSbNyUe43V77DCuztd8CkCnLPW0wsmVYwpIrqTn8GqfI/ItDbsI4ETwaSl3nW23lNuIKkBRVyJEPJsClltpzhALwt6D2gcPzeacT0U/Mpgl/csg2sWBC/E7pAUtu+EUmD7ZNFqrb/Ia6PK6yUzkDSMpInxQ0ssBR1PW/mZ22nUvGcfi/D7BUHbfiUxOEaSlAAAAAc2qwj06iecW8NraLsennrT4/9jts6MlQ2QoyqLaWDR6cacu6SspfWlBYVSUeYGs04KKUTZs7DESjjUVEd1R5NQ==</ApprovalStamp>
+  <AdditionalApprovalStamps />
+</ScriptFunctionDefinition>
