@@ -1,0 +1,131 @@
+<?xml version="1.0"?>
+<ScriptFunctionDefinition xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Version Major="1" Minor="0" />
+  <Name>Isolation Forest</Name>
+  <Script>'''
+[Modeling] Isolation Forest
+September 2021
+Version 1.0
+datascience@tibco.com
+'''
+
+import warnings
+warnings.filterwarnings("ignore")
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.ensemble import IsolationForest
+
+rng = np.random.RandomState(42)
+
+df['Plant'] = df['Plant'].astype(str)
+df['TimeStamp'] = pd.to_datetime(df['TimeStamp'])
+
+# Checking for and converting non-numeric columns into dummies
+#
+# If any non-numeric columns in "df" have a large number unique values, consider
+# pre-processing first, or simply exclude them when setting "df" as an input. Left
+# in, the following step may drain your memory.
+
+if df.shape[1] != df.select_dtypes("number").shape[1]:
+    
+    numeric = df.select_dtypes("number")
+    non_numeric = df.select_dtypes("object")
+    timestamp = df.select_dtypes('datetime')
+    
+    # Check for &amp; drop any uniquely identifying columns
+    summary_stats = non_numeric.describe()
+    check_for_id = summary_stats.iloc[:2, :].diff(axis=0)
+    uids = check_for_id.apply(lambda row: row[row == 0].index, axis=1)["unique"].values.tolist()
+    non_numeric = non_numeric.drop(uids, axis=1)
+    
+    if len(timestamp)!=0:
+        
+        for i in timestamp:
+            numeric[i+"_Day"] = df[i].dt.day
+            non_numeric[i+"_Month"] = df[i].dt.month.astype(str)
+            non_numeric[i+"_Year"] = df[i].dt.year.astype(str)
+            
+        
+    if non_numeric.empty:
+        X_transformed = numeric
+    else:
+        # Using pd.get_dummies to one-hot-encode non-numeric variables into numeric (0, 1) columns
+        non_numeric = pd.get_dummies(non_numeric, dtype="float64")
+        X_transformed = pd.concat([numeric, non_numeric], axis=1)
+
+X_train = pd.DataFrame(X_transformed,columns = X_transformed.columns)
+
+clf = IsolationForest(n_estimators=n_est,n_jobs=-1,max_samples=max_samples,max_features=max_features,
+                      random_state=rng,verbose=True,bootstrap=True)
+clf.fit(X_train)
+
+IsoPrediction = pd.DataFrame(clf.decision_function(X_train))
+
+Pred = pd.concat([df,IsoPrediction],ignore_index=True,axis=1)
+Pred.columns = list(df.columns.values)+['Prediction']
+
+'''
+Copyright (c) 2021. TIBCO Software inc.
+This file is subject to the license terms contained in the license file that is distributed with this file.
+'''</Script>
+  <Language>Python</Language>
+  <Input>
+    <Name>df</Name>
+    <Type>Table</Type>
+    <DisplayName>Input Data Frame</DisplayName>
+    <Description>Dataset to be used as an input to the isolation forest.</Description>
+    <AllowedDataType>Integer</AllowedDataType>
+    <AllowedDataType>Double</AllowedDataType>
+    <AllowedDataType>Float</AllowedDataType>
+    <AllowedDataType>Decimal</AllowedDataType>
+    <AllowedDataType>String</AllowedDataType>
+    <AllowedDataType>Date</AllowedDataType>
+    <AllowedDataType>Time</AllowedDataType>
+    <AllowedDataType>DateTime</AllowedDataType>
+    <AllowedDataType>Bool</AllowedDataType>
+    <AllowedDataType>Binary</AllowedDataType>
+    <AllowedDataType>Long</AllowedDataType>
+  </Input>
+  <Input>
+    <Name>n_est</Name>
+    <Type>Value</Type>
+    <DisplayName>Number of Estimators</DisplayName>
+    <Description>The number of trees in the isolation forest.</Description>
+    <AllowedDataType>Integer</AllowedDataType>
+  </Input>
+  <Input>
+    <Name>max_samples</Name>
+    <Type>Value</Type>
+    <DisplayName>Max Samples</DisplayName>
+    <Description>The number of samples to draw from the training set to build each tree in the isolation forest.</Description>
+    <AllowedDataType>Integer</AllowedDataType>
+    <AllowedDataType>Double</AllowedDataType>
+    <AllowedDataType>Float</AllowedDataType>
+    <AllowedDataType>Decimal</AllowedDataType>
+    <AllowedDataType>Long</AllowedDataType>
+  </Input>
+  <Input>
+    <Name>max_features</Name>
+    <Type>Value</Type>
+    <DisplayName>Max Features</DisplayName>
+    <Description>The number of features to draw from the training set to build each tree in the isolation forest.</Description>
+    <AllowedDataType>Integer</AllowedDataType>
+    <AllowedDataType>Double</AllowedDataType>
+    <AllowedDataType>Float</AllowedDataType>
+    <AllowedDataType>Decimal</AllowedDataType>
+    <AllowedDataType>Long</AllowedDataType>
+  </Input>
+  <Output>
+    <Name>Pred</Name>
+    <Type>Table</Type>
+    <DisplayName>Prediction</DisplayName>
+    <Description>The model was trained on the training data and evaluated on the same dataset. The output table consists of an additional column specifying the anomaly score. These predictions are stored in the new ‘Pred’ column. The lower the score, the more the observation is an anomaly.</Description>
+  </Output>
+  <Description>This data function will train and execute an Isolation Forest machine learning model on a given input dataset. Isolation Forests are known to be powerful, cost-efficient models for unsupervised learning.
+ Required packages are: numpy, pandas, sklearn. Written in Python.</Description>
+  <AllowCaching>false</AllowCaching>
+  <ApprovalStamp>AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAAooebi76wRECXLpUapQUPFAAAAAACAAAAAAAQZgAAAAEAACAAAAB2GsBzrtYGbB3DBWxaawArYsyxPUXPVB7e7036ckZ5bAAAAAAOgAAAAAIAACAAAADZa9ym1RuOJvvpEOjoZvKwxW20Nnjo9cf2P8Bix+XRupAAAABb5SyklWjw8AtzYHT2iZEWVVBiaVVfIbjfciBVV1K6hyyEQrFySll4p0zk4rLqNbuPqpaohKzzlXlOpwdPW1w4BJjBpxwZ2/UAdjZ3pflZeI3mvBB3S2DfPmeiVUGkvImM8/1lEk6vcIBPPuaUDrt5Kaj8BeHrfYhiQaMDD6DdGHjcPiHUtTuTsLjdZx0y/0pAAAAAu8XPtMCKyVs3tx5RNoXwmDqd6cEGDib2ZJnoBnSvc0dGIFnbJz7IfTd0yI2LFrK+/TPQGttea/ShkpDkyv9gLg==</ApprovalStamp>
+  <AdditionalApprovalStamps />
+  <Category>anomalydetection</Category>
+</ScriptFunctionDefinition>
